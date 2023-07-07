@@ -1,0 +1,12 @@
+# DATA folder
+DATA/
+
+# IDE
+.idea/
+.vscode/
+
+# Temporary and build files
+**/__pycache__
+**/*.py[cod]
+**/.ipynb_checkpoints
+**/*.egg-info

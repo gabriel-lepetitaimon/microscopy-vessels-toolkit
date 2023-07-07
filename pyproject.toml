@@ -1,0 +1,55 @@
+[project]
+
+name = "microscopy-vessels-toolkit"
+version = '0.0.1'
+authors = [
+    {name= 'Gabriel Lepetit-Aimon', email= 'gabriel.lepetit-aimon@polymtl.ca'},
+]
+description = """A bundle of tools to analyse vasculature from microscopy images."""
+readme = 'README.md'
+
+requires-python = '>=3.10'
+dependencies = [
+    'networkx',
+    'numpy',
+    'opencv-python-headless',
+    'pandas',
+    'python-pptx',
+    'scikit-image',
+    'SimpleITK',
+    'tqdm',
+    'webcolors',
+]
+
+[project.optional-dependencies]
+notebooks = ['jppype', 'jupyterlab', 'ipywidgets', 'pandas', 'plotly']
+
+[project.urls]
+Homepage = 'https://github.com/gabriel-lepetitaimon/microscopy-vessels-toolkit'
+Source = 'https://github.com/gabriel-lepetitaimon/microscopy-vessels-toolkit'
+
+[project.scripts]
+mvt = 'microscopy_vessels_toolkit.scripts.mvt_main:mvt_main'
+
+[build-system]
+requires = ["wheel", "setuptools", "Cython~=3.0.0b3", "numpy"]
+build-backend = "setuptools.build_meta"
+
+[tool.setuptools]
+package-dir = {"" = "lib"}
+
+
+[tool.ruff]
+select = ["E", "F", "B", "I"]
+line-length = 120
+unfixable = ["B"]
+target-version = "py310"
+
+[tool.ruff.per-file-ignores]
+"__init__.py" = ["E402", "F401"]
+
+[tool.ruff.isort]
+known-first-party = ["microscopy_vessels_toolkit"]
+
+[tool.black]
+line-length = 120
