@@ -1,7 +1,7 @@
 from __future__ import annotations
 
 from functools import reduce
-from typing import Iterable, Literal, Tuple, TypeGuard, overload
+from typing import Iterable, Literal, NamedTuple, Tuple, TypeGuard, overload
 
 
 class Transform:
@@ -81,25 +81,11 @@ FIT_OPTIONS = (FIT_WIDTH, FIT_HEIGHT, FIT_INNER, FIT_OUTER, CENTERED)
 FitMode = Literal["fit_width", "fit_height", "fit_inner", "fit_outer", "centered"]
 
 
-class Rect(tuple):
-    def __new__(cls, h: float, w: float, y: float = 0, x: float = 0):
-        return tuple.__new__(Rect, (h, w, y, x))
-
-    @property
-    def x(self):
-        return self[3]
-
-    @property
-    def y(self):
-        return self[2]
-
-    @property
-    def h(self):
-        return self[0]
-
-    @property
-    def w(self):
-        return self[1]
+class Rect(NamedTuple):
+    h: float
+    w: float
+    y: float
+    x: float
 
     @property
     def center(self) -> Point:
@@ -276,17 +262,9 @@ class Rect(tuple):
         return reduce(lambda a, b: a & b, rects)
 
 
-class Point(tuple):
-    def __new__(cls, y: float | int, x: float | int):
-        return tuple.__new__(Point, (y, x))
-
-    @property
-    def x(self):
-        return self[1]
-
-    @property
-    def y(self):
-        return self[0]
+class Point(NamedTuple):
+    y: float
+    x: float
 
     def xy(self) -> tuple[float, float]:
         return self.x, self.y
