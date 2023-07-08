@@ -412,7 +412,7 @@ class MultiPatchRegistration:
             return registered_patches, debug
         return registered_patches
 
-    def one2all_registration(self, patches: PatchStitching):
+    def one2all_registration(self, patches: PatchStitching, assemble_registered_patches=True):
         # Compute the order in which the patches should be registered
         reg_G = patches.patch_intersection_graph()
         G = nx.maximum_spanning_tree(reg_G)
@@ -421,22 +421,28 @@ class MultiPatchRegistration:
         global_stitch = PatchStitching([])
 
         for g in nx.connected_components(G):
+            patch0 = next(iter(g))
             if len(g) == 1:
+                global_stitch.append(patches[patch0])
                 continue
 
             g = G.subgraph(g)
             # Find the root of the tree
             patch0 = sorted(nx.center(g), key=lambda i: g.degree(i), reverse=True)[0]
             # Find the order in which the patches should be registered
-            patch_seq = [edge[1] for edge in nx.bfs_edges(g, patch0)]
+            patch_seq = [edge[1] for ]
 
             partial_stitch = PatchStitching([patches[patch0]])
 
-            for patch_id in patch_seq:
-                patch = patches[patch_id]
-                (dy, dx), metric = self.single_registration(partial_stitch, patch)
+            for p1, p2 in nx.bfs_edges(g, patch0):
+                if assemble_registered_patches:
+                    patch_fix = partial_stitch
+                else:
+                    patch_fix = patches[p1]
+                patch = patches[p2]
+                (dy, dx), metric = self.single_registration(patch_fix, patch)
 
-                patch.domain = patch.domain.translate(-dy, -dx)
+                patch.domain = patch.domain.translate(dy, dx)
                 partial_stitch.append(patch)
 
             global_stitch += partial_stitch
