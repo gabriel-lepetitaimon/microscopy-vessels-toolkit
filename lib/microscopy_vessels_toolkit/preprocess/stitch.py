@@ -15,7 +15,7 @@ from pptx.shapes.picture import Picture
 from pptx.slide import Slide
 from tqdm import tqdm
 
-from ..utilities.func import StrEnum
+from ..utilities.func import StrEnum, invert_lookup
 from ..utilities.geometry import Point, Rect
 
 
@@ -33,6 +33,10 @@ class Patch:
         self.image = image
         self.domain = domain
         self.alias = alias
+
+    @property
+    def center(self) -> Point:
+        return self.domain.center
 
     def duplicate(self) -> Patch:
         return Patch(self.image, self.domain, alias=self.alias)
@@ -245,6 +249,24 @@ class PatchStitching(list):
         G = self.patch_intersection_graph()
         return nx.maximum_spanning_tree(G)
 
+    def shuffle_patches(self, patch_indexes: Iterable[int]):
+        """
+        Reorder the patches.
+
+        Parameters
+        ----------
+        patch_indexes
+            The new order of the patches.
+        """
+        patch_indexes = np.asarray(patch_indexes, dtype=np.int)
+        assert patch_indexes.ndim == 1 and patch_indexes.shape[0] <= len(
+            self
+        ), f"patch_indexes must be a 1D array of maximum size {len(self)}"
+
+        if patch_indexes.shape[0] < len(self):
+            patch_indexes = np.concatenate((patch_indexes, np.setdiff1d(np.arange(len(self)), patch_indexes)))
+        return PatchStitching([self[i] for i in patch_indexes])
+
     def stitch(self, blend: BlendMode = BlendMode.GAUSSIAN, return_mask=False):
         """
         Stitch the patches together into a single image.
@@ -300,6 +322,9 @@ class PatchStitching(list):
         if return_mask:
             return stitch, weight > 0
         return stitch
+
+    def patch_centers(self):
+        return np.array([patch.center for patch in self])
 
 
 class MultiPatchRegistration:
@@ -384,19 +409,21 @@ class MultiPatchRegistration:
 
         # Reconstruct the stitched image
         registered_patches = PatchStitching()
+        patch_order = []
         relative_offset = {}
 
         for subgraph_ids in nx.connected_components(optimal_path):
             first_node = next(iter(subgraph_ids))
             if len(subgraph_ids) == 1:
                 registered_patches.append(patches[first_node])
+                patch_order.append(first_node)
                 continue
 
             path = optimal_path.subgraph(subgraph_ids)
 
             # Compute the relative displacement of each patch
             patches_dpos = {first_node: Point(0, 0)}
-            for p1, p2 in nx.bfs_edges(path, source=first_node):
+            for p1, p2 in nx.dfs_edges(path, source=first_node):
                 dpos = reg_G.edges[p1, p2]["dyx"]
                 if reg_G.edges[p1, p2]["moving"] == p1:
                     dpos = -dpos
@@ -412,9 +439,12 @@ class MultiPatchRegistration:
                 offset = dpos - avg_dpos
                 patch.domain = patch.domain + offset
                 registered_patches.append(patch)
+                patch_order.append(patch_id)
                 relative_offset[patch_id] = offset / patch.domain.shape
 
         debug["relative_offset"] = relative_offset
+        patch_order = invert_lookup(patch_order)
+        registered_patches = registered_patches.shuffle_patches(patch_order)
 
         if return_debug:
             return registered_patches, debug
@@ -432,6 +462,8 @@ class MultiPatchRegistration:
 
         # Perform the registration for each sub-graph of patches
         global_stitch = PatchStitching([])
+        patch_order = []
+
         relative_offset = {}
         total_metric = 0
         with tqdm(total=len(G), desc="Registering patches...", disable=not verbose, leave=False) as pbar:
@@ -439,6 +471,7 @@ class MultiPatchRegistration:
                 patch0 = next(iter(g))
                 if len(g) == 1:
                     global_stitch.append(patches[patch0])
+                    patch_order.append(patch0)
                     continue
 
                 g = G.subgraph(g)
@@ -447,6 +480,7 @@ class MultiPatchRegistration:
 
                 # Traverse the tree in BFS order
                 partial_stitch = PatchStitching([patches[patch0]])
+                patch_order.append(patch0)
                 for p1, p2 in nx.bfs_edges(g, patch0):
                     pbar.update(1)
                     if merge_registered_patches:
@@ -459,6 +493,7 @@ class MultiPatchRegistration:
 
                     patch.domain = patch.domain.translate(dy, dx)
                     partial_stitch.append(patch)
+                    patch_order.append(p2)
                     relative_offset[p2] = Point(y=dy, x=dx) / patch.domain.shape
 
                 global_stitch += partial_stitch
@@ -467,6 +502,8 @@ class MultiPatchRegistration:
         debug["total_metric"] = total_metric
         if verbose:
             print(f"\tTotal metric of optimal path: {total_metric:.2f}")
+        patch_order = invert_lookup(patch_order)
+        global_stitch = global_stitch.shuffle_patches(patch_order)
 
         if return_debug:
             return global_stitch, debug

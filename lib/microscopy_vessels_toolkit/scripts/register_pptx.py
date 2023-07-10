@@ -19,10 +19,10 @@ def register_pptx(pptx_path: str, output_path: str = None):
     for i, slide in enumerate(prs.slides):
         stitch = PatchStitching.from_pptx_slide(slide)
         if len(stitch) < 2:
-            print(f"> Slide {i}: No patches found.")
+            print(f"> Slide {i+1}: No patches found.")
             continue
         else:
-            print(f"> Slide {i}: {len(stitch)} patches found.")
+            print(f"> Slide {i+1}: {len(stitch)} patches found.")
 
         t = datetime.now()
         stitch.crop_to_content()
