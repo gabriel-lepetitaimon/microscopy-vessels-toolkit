@@ -3,7 +3,7 @@ from __future__ import annotations
 __all__ = ["Patch", "PatchStitching", "MultiPatchRegistration"]
 
 import math
-from typing import Iterable, List, Literal, Optional, Tuple
+from typing import Iterable, List, Optional, Tuple
 
 import cv2
 import networkx as nx
@@ -15,9 +15,17 @@ from pptx.shapes.picture import Picture
 from pptx.slide import Slide
 from tqdm import tqdm
 
+from ..utilities.func import StrEnum
 from ..utilities.geometry import Point, Rect
 
-BlendMode = Literal["average", "max", "min", "radial", "gaussian", "none"]
+
+class BlendMode(StrEnum):
+    MAX = "max"
+    MIN = "min"
+    RADIAL = "radial"
+    GAUSSIAN = "gaussian"
+    MEAN = "mean"
+    NONE = "none"
 
 
 class Patch:
@@ -237,7 +245,7 @@ class PatchStitching(list):
         G = self.patch_intersection_graph()
         return nx.maximum_spanning_tree(G)
 
-    def stitch(self, blend: BlendMode = "gaussian", return_mask=False):
+    def stitch(self, blend: BlendMode = BlendMode.GAUSSIAN, return_mask=False):
         """
         Stitch the patches together into a single image.
 
@@ -256,36 +264,36 @@ class PatchStitching(list):
         stitch = np.zeros(shape + (3,), dtype=np.float32)
         weight = np.zeros(shape, dtype=np.float32) if blend else None
 
-        if blend == "min":
+        if blend == BlendMode.MIN:
             stitch += 1
 
         for patch, domain in zip(self, patch_domains, strict=True):
             patch_data = patch.resized_image(domain)
             match blend:
-                case "last":
+                case BlendMode.NONE:
                     stitch[domain.slice()] = patch_data
-                case "max":
+                case BlendMode.MAX:
                     stitch[domain.slice()] = np.maximum(stitch[domain.slice()], patch_data)
-                case "min":
+                case BlendMode.MIN:
                     stitch[domain.slice()] = np.minimum(stitch[domain.slice()], patch_data)
                     weight[domain.slice()] = 1
-                case "radial":
+                case BlendMode.RADIAL:
                     G = radial_mask(domain.shape)
                     stitch[domain.slice()] += G[..., None] * patch_data
                     weight[domain.slice()] += G
-                case "gaussian":
+                case BlendMode.GAUSSIAN:
                     G = gaussian_mask(domain.shape)
                     stitch[domain.slice()] += G[..., None] * patch_data
                     weight[domain.slice()] += G
-                case "mean":
+                case BlendMode.MEAN:
                     stitch[domain.slice()] += patch_data
                     weight[domain.slice()] += 1
 
-        if blend in ("mean", "gaussian", "radial"):
+        if blend in (BlendMode.RADIAL, BlendMode.GAUSSIAN, BlendMode.MEAN):
             mask = weight > 0
             for i in range(stitch.shape[2]):
                 stitch[..., i][mask] /= weight[mask]
-        elif blend == "min":
+        elif blend == BlendMode.MIN:
             mask = weight > 0
             stitch[mask] = [0, 0, 0]
 
@@ -319,7 +327,7 @@ class MultiPatchRegistration:
             fixed_data = fixed_patch.extract_domain(inter_domain).resized_image()
         else:
             fixed_patch = fixed_patch.extract_domain(inter_domain)
-            fixed_data = fixed_patch.stitch(blend="mean")
+            fixed_data = fixed_patch.stitch()
             inter_domain = fixed_patch.domain.to_int()
         moving_data = moving_patch.extract_domain(inter_domain).resized_image()
 
@@ -368,11 +376,11 @@ class MultiPatchRegistration:
 
         # Find the optimal reconstruction path
         optimal_path = nx.maximum_spanning_tree(reg_G, weight="metric")
-        optimal_metric = sum(reg_G.edges[e]["metric"] for e in optimal_path.edges)
+        total_metric = sum(reg_G.edges[e]["metric"] for e in optimal_path.edges)
         if verbose:
-            print(f"\tTotal metric of optimal path: {optimal_metric:.2f}")
+            print(f"\tTotal metric of optimal path: {total_metric:.2f}")
         debug["optimal_path"] = optimal_path
-        debug["optimal_metric"] = optimal_metric
+        debug["total_metric"] = total_metric
 
         # Reconstruct the stitched image
         registered_patches = PatchStitching()
@@ -412,40 +420,56 @@ class MultiPatchRegistration:
             return registered_patches, debug
         return registered_patches
 
-    def one2all_registration(self, patches: PatchStitching, assemble_registered_patches=True):
+    def one2all_registration(
+        self, patches: PatchStitching, merge_registered_patches=True, return_debug=False, verbose=False
+    ):
+        debug = {}
+
         # Compute the order in which the patches should be registered
         reg_G = patches.patch_intersection_graph()
         G = nx.maximum_spanning_tree(reg_G)
+        debug["optimal_path"] = G
 
         # Perform the registration for each sub-graph of patches
         global_stitch = PatchStitching([])
+        relative_offset = {}
+        total_metric = 0
+        with tqdm(total=len(G), desc="Registering patches...", disable=not verbose, leave=False) as pbar:
+            for g in nx.connected_components(G):
+                patch0 = next(iter(g))
+                if len(g) == 1:
+                    global_stitch.append(patches[patch0])
+                    continue
 
-        for g in nx.connected_components(G):
-            patch0 = next(iter(g))
-            if len(g) == 1:
-                global_stitch.append(patches[patch0])
-                continue
+                g = G.subgraph(g)
+                # Find the root of the tree
+                patch0 = sorted(nx.center(g), key=lambda i: g.degree(i), reverse=True)[0]
 
-            g = G.subgraph(g)
-            # Find the root of the tree
-            patch0 = sorted(nx.center(g), key=lambda i: g.degree(i), reverse=True)[0]
-            # Find the order in which the patches should be registered
-            patch_seq = [edge[1] for ]
+                # Traverse the tree in BFS order
+                partial_stitch = PatchStitching([patches[patch0]])
+                for p1, p2 in nx.bfs_edges(g, patch0):
+                    pbar.update(1)
+                    if merge_registered_patches:
+                        patch_fix = partial_stitch
+                    else:
+                        patch_fix = patches[p1]
+                    patch = patches[p2]
+                    (dy, dx), metric = self.single_registration(patch_fix, patch)
+                    total_metric += -metric
 
-            partial_stitch = PatchStitching([patches[patch0]])
+                    patch.domain = patch.domain.translate(dy, dx)
+                    partial_stitch.append(patch)
+                    relative_offset[p2] = Point(y=dy, x=dx) / patch.domain.shape
 
-            for p1, p2 in nx.bfs_edges(g, patch0):
-                if assemble_registered_patches:
-                    patch_fix = partial_stitch
-                else:
-                    patch_fix = patches[p1]
-                patch = patches[p2]
-                (dy, dx), metric = self.single_registration(patch_fix, patch)
+                global_stitch += partial_stitch
 
-                patch.domain = patch.domain.translate(dy, dx)
-                partial_stitch.append(patch)
+        debug["relative_offset"] = relative_offset
+        debug["total_metric"] = total_metric
+        if verbose:
+            print(f"\tTotal metric of optimal path: {total_metric:.2f}")
 
-            global_stitch += partial_stitch
+        if return_debug:
+            return global_stitch, debug
         return global_stitch
 
 

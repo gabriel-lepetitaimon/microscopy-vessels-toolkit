@@ -17,6 +17,7 @@ dependencies = [
     'python-pptx',
     'scikit-image',
     'SimpleITK',
+    'StrEnum',
     'tqdm',
     'webcolors',
 ]

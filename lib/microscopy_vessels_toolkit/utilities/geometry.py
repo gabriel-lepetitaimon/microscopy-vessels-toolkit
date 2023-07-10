@@ -1,7 +1,9 @@
 from __future__ import annotations
 
 from functools import reduce
-from typing import Iterable, Literal, NamedTuple, Tuple, TypeGuard, overload
+from typing import Iterable, NamedTuple, Tuple, TypeGuard, overload
+
+from .func import StrEnum
 
 
 class Transform:
@@ -70,22 +72,19 @@ class Transform:
         return Transform(offset, ratio, origin.top_left)
 
 
-FIT_WIDTH = "fit_width"
-FIT_HEIGHT = "fit_height"
-FIT_INNER = "fit_inner"
-FIT_OUTER = "fit_outer"
-CENTERED = "centered"
-
-FIT_OPTIONS = (FIT_WIDTH, FIT_HEIGHT, FIT_INNER, FIT_OUTER, CENTERED)
-
-FitMode = Literal["fit_width", "fit_height", "fit_inner", "fit_outer", "centered"]
+class FitMode(StrEnum):
+    WIDTH = "fit_width"
+    HEIGHT = "fit_height"
+    INNER = "fit_inner"
+    OUTER = "fit_outer"
+    CENTERED = "centered"
 
 
 class Rect(NamedTuple):
     h: float
     w: float
-    y: float
-    x: float
+    y: float = 0
+    x: float = 0
 
     @property
     def center(self) -> Point:
@@ -226,20 +225,20 @@ class Rect(NamedTuple):
             fx = fy
         return Rect(self.h * fy, self.w * fx, self.y * fy, self.x * fx)
 
-    def fit(self, other: Rect | Point | tuple, mode: FitMode = FIT_WIDTH):
+    def fit(self, other: Rect | Point | tuple, mode: FitMode = FitMode.WIDTH):
         match other:
             case (h, w):
                 other = Rect.from_size((h, w))
             case (h, w, y, x):
                 other = Rect(h, w, y, x)
         match mode:
-            case "fit_outer":
+            case FitMode.OUTER:
                 ratio = max(other.w / self.w, other.h / self.h)
-            case "fit_inner":
+            case FitMode.INNER:
                 ratio = min(other.w / self.w, other.h / self.h)
-            case "fit_width":
+            case FitMode.WIDTH:
                 ratio = other.w / self.w
-            case "fit_height":
+            case FitMode.HEIGHT:
                 ratio = other.h / self.h
             case _:
                 ratio = 1
