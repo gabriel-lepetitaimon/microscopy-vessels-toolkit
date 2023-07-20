@@ -4,6 +4,7 @@ from os.path import splitext
 
 import cv2
 from pptx import Presentation
+from pptx.exc import PackageNotFoundError
 from pptx.shapes.group import GroupShape
 from pptx.shapes.picture import Picture
 
@@ -12,7 +13,12 @@ from microscopy_vessels_toolkit.preprocess.stitch import MultiPatchRegistration,
 
 def register_pptx(pptx_path: str, output_path: str = None):
     register = MultiPatchRegistration()
-    prs = Presentation(pptx_path)
+
+    try:
+        prs = Presentation(pptx_path)
+    except PackageNotFoundError:
+        print(f"Impossible to register pptx: {pptx_path} was not found.")
+        quit(-1)
 
     if output_path is None:
         pptx_name, pptx_ext = splitext(pptx_path)
