@@ -1,9 +1,7 @@
-import os
-from typing import List, Tuple
-import numpy as np
-from sklearn.metrics import roc_curve, auc
-from scipy.ndimage import convolve
 import cv2
+import numpy as np
+from scipy.ndimage import convolve
+from sklearn.metrics import roc_curve
 
 
 ############################################################################
